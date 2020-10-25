@@ -1,0 +1,700 @@
+---
+title: "CS112 Assignment 2, Fall 2020"
+author: "Paul Song"
+date: "10/16/2020"
+output:
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+# Don't change this part of the document
+knitr::opts_chunk$set(echo = TRUE)
+## install and load the necessary packages
+library(lubridate)
+library(tree)
+library(Matching)
+library(boot)
+library(randomForest)
+library(arm)
+# we need to set the seed of R's random number generator, in order to produce comparable results 
+```
+
+**Note**: *This is an RMarkdown document. Did you know you can open this document in RStudio, edit it by adding your answers and code, and then knit it to a pdf? Then you can submit both the .rmd file (the edited file) and the pdf file as a zip file on Forum. This method is actually preferred. To learn more about RMarkdown, watch the videos from session 1 and session 2 of the CS112B optional class. [This](https://rstudio.com/wp-content/uploads/2015/02/rmarkdown-cheatsheet.pdf) is also a cheat sheet for using Rmarkdown. If you have questions about RMarkdown, please post them on Perusall.*
+
+**Note**: *If you are not comfortable with RMarkdown, you can use any text editor (google doc or word) and type your answers and then save everything as a pdf and submit both the pdf file AND the link to your code (on github or jupyter) on Forum.*
+
+**Note**: *Try knitting this document in your RStudio. You should be able to get a pdf file. At any step, you can try knitting the document and recreate a pdf. If you get error, you might have incomplete code.*
+
+**Note**: *If you are submitting your assignment as an RMarkdown file, make sure you add your name to the top of this document.*
+
+## QUESTION 1
+
+#### STEP 1
+
+Create a set of 1000 outcome observations using a data-generating process (DGP) that incorporates a systematic component and a stochastic component (of your choice)
+
+```{r}
+set.seed(32)
+
+#created an empty list of length 1000
+x_data <- rep(NA, 1000)
+#filled in the list by taking the index and multiplyng by 2 and adding randomness
+for (i in 1:length(x_data)) {x_data[i] <- 2*i + rnorm(1)}
+my_data <- data.frame("x"=x_data, "y"=1:1000)
+head(my_data)
+```
+
+#### STEP 2
+
+Tell a 2-3 sentence story about the data generating process you coded up above. What is it about and what each component mean?
+
+  This is a very simple data set where x can be calculated by simply multiplying y by 2 and adding randomness. 2*y_i is the systematic component and rnorm(1) is stochastic component. 
+
+#### STEP 3
+
+Using an incorrect model of the systematic component (of your choice), and using the simulation-based approach covered in class (the `arm` library, etc.), generate 1 prediction for every observation and calculate and report RMSE. Make sure you write out your model and report your RMSE. 
+
+Each prediction should be conditional on the predictor values of the corresponding observation. E.g., when predicting for observation #1, use the predictor values of observation #1.
+
+```{r}
+# The incorrect model where the relationship of y to x isn't even taken into account
+incorrect_lm <- lm(y~0, data=my_data)
+# predict basedd on the incorrect model
+pred_incorrect <- predict(incorrect_lm, newdata=my_data)
+# created function to calculate RMSE, basically the equation for RMSE
+rmse <- function(true, pred) {
+  residual <- sum((true - pred)**2)
+  return(sqrt(residual/length(pred)))
+}
+# calculate RMSE for the predictions based on incorrect model
+rmse(my_data,pred_incorrect)
+```
+
+
+#### STEP 4
+
+Using the correct model (correct systematic and stochastic components), and using the simulation-based approach covered in class (the `arm` library, etc.), generate 1 prediction for every observation and calculate & report your RMSE. Once again, write out your model and report your RMSE. 
+
+Each prediction should be conditional on the predictor values of the corresponding observation. E.g., when predicting for observation #1, use the predictor values of observation #1.
+
+```{r}
+# This time, the correct model is used where we look for the relationship between x and y.
+correct_lm <- lm(y~x, data=my_data)
+# predict based on the correct model
+pred_correct <- predict(correct_lm, newdata=my_data)
+
+# using function created previously, calculate RMSE
+rmse(my_data,pred_correct)
+```
+
+
+
+#### STEP 5
+
+Which RMSE is larger: The one from the correct model or the one from the incorrect model? Why?
+
+  The incorrect model has a larger RMSE value. This is because the regression line doesn't fit the data as well as the correct model. This creates larger residuals (differences from actual value to predicted value) for the incorrect regression line which in turn returns a greater RMSE value. 
+
+
+## QUESTION 2
+
+Imagine that you want to create a data viz that illustrates the sensitivity of regression to outlier data points. So, you want to create two figures: 
+	
+One figure that shows a regression line fit to a 2-dimensional (x and y) scatterplot, such that the regression line clearly has a positive slope. 
+
+```{r}
+# I'm reusing the dataset I created above but am sampling only 50 points because we don't need 1000 points
+sample <- my_data[sample(1:nrow(my_data), 50, replace=FALSE), ]
+#linear regression based on sample of the dataset from question 1
+lm1 <- lm(y~x, data=sample)
+plot(sample)
+abline(lm1, col="red")
+```
+
+And, another figure that shows a regression line with a negative slope fit to a scatter plot of the same data **plus one additional outlier data point**. This one data point is what changes the sign of the regression line’s slope from positive to negative.
+
+```{r}
+# rbind() is used to add one more row to the dataset. This data point is very different from all the other points.
+sample_neg <- rbind(sample, c(3000, -10000))
+# same process as above to plot and draw regression line
+lm1 <- lm(y~x, data=sample_neg)
+plot(sample_neg)
+abline(lm1, col="red")
+```
+
+Be sure to label the axes and the title the figures appropriately. Include a brief paragraph that explains the number of observations and how you created the data set and the outlier.
+
+  The data set I used is a subset of the data I generated in problem 1. I used the sample() function to pick 50 random observations and created a linear regression. I sampled 50 observations because the original data set has 1000 observations. Because there are so many observations, one outlier would be had to change the positive slope to a negative. The outlier would have to be extreme; an outlier of (3000, -100000) had to be used to see a slight negative slope but in that situation, I could hardly see the data points. This is why I decided to sample 50 random observations. Less data points are more sensitive to outliers and the plots above show it.
+
+
+## QUESTION 3
+
+#### STEP 1
+
+Using the `laLonde` data set, run a linear regression that models `re78` as a function of `age`, `education`, `re74`, `re75`, `hisp`, and `black`. Note that the `lalonde` data set comes with the package `Matching`.
+
+```{r}
+# importing data and creating linear regression model
+data(lalonde)
+reg <- lm(re78~age+educ+re74+re75+hisp+black, data=lalonde)
+```
+
+#### STEP 2
+
+Report coefficients and R-squared. 
+
+```{r}
+coef(reg)
+summary(reg)
+```
+
+Then calculate R-squared by hand and confirm / report that you get the same or nearly the same answer as the summary (`lm`) command. 
+
+Write out hand calculations here.
+
+```{r}
+#the equation for R-squared is 1 - (residual sum of squares)/(total sum of squares).
+#the residual sum of squares can be calculated by summing the square of residuals
+#the residual can be calculated by subtracting the observed data with the predicted data
+rss <- sum((lalonde$re78-predict(reg, lalonde))^2)
+#the total sum of squares is the sum  of squares of the observed - mean
+tss <- sum((lalonde$re78-mean(lalonde$re78))^2)
+r_squared <- 1 - (rss/tss)
+r_squared
+```
+
+#### STEP 3
+
+Then, setting all the predictors at their means EXCEPT `education`, create a data visualization that shows the 95% confidence interval of the expected values of `re78` as `education` varies from 3 to 16. Be sure to include axes labels and figure titles.
+
+```{r}
+#empty matrix to store estimated re78 data
+#using 100 because 1000 is too big and takes too much time to run
+storage_matrix_estimate <- matrix(NA, nrow=100, ncol=14)
+
+for (educ in c(3:16)) {
+  for (i in 1:100) {
+    #matrix to temporarily hold the 100 means of 100 sets of simulation estimates
+    storage <- matrix(NA, nrow=0, ncol=7)
+    for (j in 1:100) {
+      sim_object <- sim(reg,100)
+      #vector to store means of simulations
+      temp <- c()
+      #for loop to take the mean
+      for (n in 1:7) { temp <- c(temp, mean(coef(sim_object)[,n])) }
+      #add the mean values to the storage matrix
+      storage <- rbind(storage, temp)
+    }
+    #x value that will be used to calculate y (re78)
+    Xs <- c(mean(lalonde$age), educ, mean(lalonde$re74), mean(lalonde$re75), mean(lalonde$hisp), mean(lalonde$black))
+    #solve for re78 using given x and B estimates
+    storage_matrix_estimate[i, educ-2] <- sum(storage[i,]*c(1,Xs))
+  }
+}
+
+plot(x = NA, y = NA, type = "n", xlim = c(3,16), ylim = c(-300,10000), 
+     main = "Estimated real earnings in 1978 based on educational level", xlab = "Years of schooling", 
+     ylab = "Real earnings in 1978", lwd=2)
+
+# find the 95% confidence intervals of all the y-value predictions (re78) stored in storage_matrix_predict and save it to conf.intervals_educ
+conf.intervals_educ <- apply(storage_matrix_estimate, 2, quantile, probs = c(0.025, 0.975))
+
+# add the vertical lines that represent confidence intervals to the plot
+for (educ in 3:16) {
+  segments(
+    x0 = educ, # x value for 2.5% quantile
+    y0 = conf.intervals_educ[1, educ - 2], # y value for 2.5% quantile
+    x1 = educ, # x value for 97.5% quantile
+    y1 = conf.intervals_educ[2, educ - 2], # y value for 97.5% quantile
+    lwd = 2)
+}
+```
+
+#### STEP 4
+
+Then, do the same thing, but this time for the predicted values of `re78`. Be sure to include axes labels and figure titles.
+
+```{r}
+# Simulate linear regression model 1000 times and save it to sim_object
+sim_object <- sim(reg,1000)
+
+# this will be used to store all predictions
+storage_matrix_predict <- matrix(NA, nrow = 1000, ncol = 14)
+
+
+for (educ in c(3:16)) {
+  for (i in 1:1000) {
+    # Xs is the X values of the linear regression equation, Y=B1 + B2*X1 + B3*X2 + ...
+    # all the variables are means except for education
+    Xs <- c(mean(lalonde$age), educ, mean(lalonde$re74), 
+            mean(lalonde$re75), mean(lalonde$hisp), mean(lalonde$black))
+    # stores the y-value (re78) calculated by the different X and B values we predict
+    storage_matrix_predict[i, educ-2] <- sum(coef(sim_object)[i,]*c(1,Xs))
+  }
+}
+
+# create empty plot where we set the ranges of the axis and the lables
+plot(x = NA, y = NA, type = "n", xlim = c(3,16), ylim = c(-300,10000), 
+     main = "Predicted real earnings in 1978 based on educational level", xlab = "Years of schooling", 
+     ylab = "Real earnings in 1978", lwd=2)
+
+# find the 95% confidence intervals of all the y-value predictions (re78) stored in storage_matrix_predict and save it to conf.intervals_educ
+conf.intervals_educ <- apply(storage_matrix_predict, 2, quantile, probs = c(0.025, 0.975))
+
+# add the vertical lines that represent confidence intervals to the plot
+for (educ in 3:16) {
+  segments(
+    x0 = educ, # x value for 2.5% quantile
+    y0 = conf.intervals_educ[1, educ - 2], # y value for 2.5% quantile
+    x1 = educ, # x value for 97.5% quantile
+    y1 = conf.intervals_educ[2, educ - 2], # y value for 97.5% quantile
+    lwd = 2)
+}
+```
+
+#### STEP 5
+
+Lastly, write a short paragraph with your reflections on this exercise (specifically, the length of intervals for given expected vs. predicted values) and the results you obtained.
+
+  We can see that while the shape and mean of the expected and predicted value plots are similar, the range of the confidence interval is not. The lengths of the confidence intervals for expected values are much narrower than for predicted values. This is because the expected values worked with a lot more data. The averages of 1000 simulations were used to create 1000 estimated values. The predicted values were more sensitive to outliers and had a higher variance than the expected values.
+
+
+## QUESTION 4
+
+#### STEP 1
+
+Using the `lalonde` data set, run a logistic regression, modeling treatment status as a function of `age`, `education`, `hisp`, `re74` and `re75`. Report and interpret the regression coefficient and 95% confidence intervals for `age` and `education`.
+
+```{r}
+# general linear regression for lalonde with treatment as dependent variable. glm() is used because we are working with categorical data
+glm1 <- glm(treat~age+educ+hisp+re74+re75, data=lalonde, family=binomial)
+summary(glm1)
+confint(glm1, c("age","educ"), level=0.95)
+```
+
+Report and interpret regression coefficient and 95% confidence intervals for `age` and `education` here. 
+
+  The regression coefficient for 'age' is 0.0165 and for 'education' is 0.06922. This is basically telling us how much these variables affect the dependent variable, treatment. Looking at 'age' and 'education', we can see that education has a higher number, and therefore, a higher effect on the treatment variable.
+  The 95% confidence interval for 'age' is (-0.0154, 0.0385) and for 'education' is (-0.0385, 0.1796). The confidence interval shows us how variance is present for different variables. The 'age' variable has a smaller variance than 'education'.
+
+#### STEP 2
+
+Use a simple bootstrap to estimate (and report) bootstrapped confidence intervals for `age` and `education` given the logistic regression above. Code the bootstrap algorithm yourself.
+
+```{r}
+# this function takes data and gets a sample, with replacement, n.times and returns the subset of the inputted data. This is a way of resampling data so that we have more to work with.
+bootstrap <- function(data, n.times) {
+  boot_rows <- sample(1:nrow(data), size=n.times, replace=TRUE)
+  return(data[boot_rows,])
+}
+
+# we get 1000 different samples from the lalonde dataset
+boot_data <- bootstrap(lalonde, 1000)
+
+# we find the general linear model and use the bootstrapped data as input
+glm2 <- glm(treat~age+educ+hisp+re74+re75, data=boot_data, family=binomial)
+
+confint(glm2, c("age","educ"), level=0.95)
+
+```
+
+Report bootstrapped confidence intervals for `age` and `education` here. 
+
+  95% confidence interval for 'age' is (-0.0040, 0.0315) and for 'education' is (-0.0158, 0.1333)
+
+#### STEP 3
+
+Then, using the simulation-based approach and the `arm` library, set all the predictors at their means EXCEPT `education`, create a data visualization that shows the 95% confidence interval of the expected values of the probability of receiving treatment as education varies from 3 to 16. Be sure to include axes labels and figure titles.
+
+```{r}
+# very similar to what was done on question 3
+glm_matrix_estimate <- matrix(NA, nrow=100, ncol=14)
+
+for (educ in c(3:16)) {
+  for (i in 1:100) {
+    storage <- matrix(NA, nrow=0, ncol=6)
+    for (j in 1:100) {
+      sim_object <- sim(glm2,100)
+      temp <- c()
+      for (n in 1:6) { temp <- c(temp, mean(coef(sim_object)[,n])) }
+      storage <- rbind(storage, temp)
+    }
+    Xs <- c(mean(boot_data$age), educ, mean(boot_data$hisp), mean(boot_data$re74), mean(boot_data$re75))
+    glm_matrix_estimate[i, educ-2] <- exp(sum(storage[i,]*c(1,Xs)))/(1+exp(sum(storage[i,]*c(1,Xs))))
+  }
+}
+
+plot(x = NA, y = NA, type = "n", xlim = c(3,16), ylim = c(0,1), 
+     main = "Estimated probability of receiving treatment based on years of schooling", xlab = "Years of schooling", 
+     ylab = "Probability of treatment", lwd=2)
+
+conf.intervals_educ <- apply(glm_matrix_estimate, 2, quantile, probs = c(0.025, 0.975))
+
+for (educ in 3:16) {
+  segments(
+    x0 = educ,
+    y0 = conf.intervals_educ[1, educ - 2],
+    x1 = educ,
+    y1 = conf.intervals_educ[2, educ - 2],
+    lwd = 2)
+}
+```
+
+#### STEP 4
+
+Then, do the same thing, but this time for the predicted values of the probability of receiving treatment as education varies from 3 to 16. Be sure to include axes labels and figure titles.
+
+```{r}
+# very similar to what was done on question 3 but this time with glm and probability of treatment as dependent variable
+
+sim_object <- sim(glm2,1000)
+
+glm_matrix_predict <- matrix(NA, nrow = 1000, ncol = 14)
+
+for (educ in c(3:16)) {
+  for (i in 1:1000) {
+    Xs <- c(mean(boot_data$age), educ, mean(boot_data$hisp), mean(boot_data$re74), mean(boot_data$re75))
+    # the right hand side of the line below is the equation for the logit since we're working with categorical data
+    glm_matrix_predict[i, educ-2] <- exp(sum(coef(sim_object)[i,]*c(1,Xs)))/
+                                      (1+exp(sum(coef(sim_object)[i,]*c(1,Xs))))
+  }
+}
+
+plot(x = c(1:100), y = c(1:100), type = "n", xlim = c(3,16), ylim = c(0,1), 
+     main = "Predicted probability of receiving treatment based on years of schooling", xlab = "Years of schooling", 
+     ylab = "Probability of treatment", lwd=2)
+
+conf.intervals_educ <- apply(glm_matrix_predict, 2, quantile, probs = c(0.025, 0.975))
+
+for (educ in 3:16) {
+  segments(
+    x0 = educ,
+    y0 = conf.intervals_educ[1, educ - 2],
+    x1 = educ,
+    y1 = conf.intervals_educ[2, educ - 2],
+    lwd = 2)
+}
+```
+
+#### STEP 5
+
+Lastly, write a short paragraph with your reflections on this exercise and the results you obtained.
+
+  First, when comparing the confidence intervals of 'age' and 'education' from the two different methods, bootstrapping and not, we found that the confidence intervals found when bootstrapping returned a smaller variance. This isn't suprising as that is one of the benefits of bootstrapping. We are basically creating 1000 datasets from one dataset. This gives us a better idea of the characteristics of that one dataset and so the confidence interval calculated using bootstrapped data is narrower. 
+
+## QUESTION 5
+
+
+Write the executive summary for a decision brief about the impact of a stress therapy program, targeted at individuals age 18-42, intended to reduce average monthly stress. The program was tested via RCT, and the results are summarized by the figure that you get if you run this code chunk:
+
+```{r}
+# Note that if you knit this document, this part of the code won't 
+# show up in the final pdf which is OK. We don't need to see the code
+# we wrote.
+
+# How effective is a therapy method against stress
+
+# Participants in the study record their stress level for a month.
+# Every day, participants assign a value from 1 to 10 for their stress level. 
+# At the end of the month, we average the results for each participant.
+
+#adds the confidence interval (first row of the matrix is lower 
+# bound, second row is the upper bound)
+trt1 = matrix(NA,nrow=2,ncol=7)
+ctrl = matrix(NA,nrow=2,ncol=7) 
+
+trt1[,1]=c(3.7, 6.5) #18  
+ctrl[,1]=c(5, 8)
+
+trt1[,2]=c(5, 8.5) #22
+ctrl[,2]=c(7.5, 9)
+
+trt1[,3]=c(6, 9) #26
+ctrl[,3]=c(8.5, 10)
+
+trt1[,4]=c(5, 7) #30
+ctrl[,4]=c(6, 8)
+
+trt1[,5]=c(3.5, 5) #34
+ctrl[,5]=c(4.5, 7)
+
+trt1[,6]=c(2, 3.5) #38
+ctrl[,6]=c(3.5, 6)
+
+trt1[,7]=c(0.5, 2) #42
+ctrl[,7]=c(2.5, 5)
+
+# colors to each group
+c1 = rgb(red = 0.3, green = 0, blue = 1, alpha = 0.7) #trt1
+c2 = rgb(red = 1, green = 0.6, blue = 0, alpha = 1) #trt2
+c3 = rgb(red = 0, green = 0.5, blue = 0, alpha = 0.7) #ctrl
+
+# creates the background of the graph
+plot(x = c(1:100), y = c(1:100), 
+     type = "n", 
+     xlim = c(17,43), 
+     ylim = c(0,11), 
+     cex.lab=1,
+     main = "Stress Level - 95% Prediction Intervals", 
+     xlab = "Age", 
+     ylab = "Average Stress Level per Month", 
+     xaxt = "n")
+
+axis(1, at=seq(18,42,by=4), seq(18, 42, by=4))
+
+grid(nx = NA, ny = NULL, col = "lightgray", lty = "dotted",
+     lwd=par("lwd"), equilogs = TRUE)
+
+# adds the legend
+legend('topright',legend=c('Treatment','Control'),fill=c(c1,c2))
+
+# iterates to add stuff to plot
+for (age in seq(from=18,to=42,by=4)) { 
+  #treatment
+  segments(x0=age-0.2, y0=trt1[1, (age-18)/4+1],
+           x1=age-0.2, y1=trt1[2, (age-18)/4+1], lwd=4, col=c1)
+  
+  #control
+  segments(x0=age+0.2, y0=ctrl[1, (age-18)/4+1],
+           x1=age+0.2, y1=ctrl[2, (age-18)/4+1], lwd=4, col=c2)
+}
+
+```
+
+(Not that it matters, really, but you can imagine that these results were obtained via simulation, just like the results you have hopefully obtained for question 2 above). 
+
+Your executive summary should be between about 4 and 10 sentences long, it should briefly describe the purpose of the study, the methodology, and the policy implications/prescription. (Feel free to imaginatively but realistically embellish/fill-in-the-blanks with respect to any of the above, since I am not giving you backstory here).
+
+Write your executive summary here.
+
+  The purpose of this study is to measure the effect of stress therapy. Looking at the graph, we see that the length of the vertical lines indicate the 95% confidence interval. The narrower they are, the more confident we are of the effect of the control or treatment on the average stress level. The mean level of average stress is smaller in the treatment group but the treatment group does seem to have a higher variance as seen by the longer vertical lines. Also, the treatment and control has overlapping stress levels on the younger ages (18-26) but as the age gets older, we see less overlap and less variance. This shows that the treatment had a greater effect on older people and the effect of the treatment on younger people is comparatively uncertain.
+
+
+## QUESTION 6
+
+Can we predict what projects end up being successful on Kickstarter? 
+
+We have data from the [Kickstarter](https://www.kickstarter.com/) company. 
+
+From Wikipedia: Kickstarter is an American public-benefit corporation based in Brooklyn, New York, that maintains a global crowdfunding platform focused on creativity and merchandising. The company's stated mission is to "help bring creative projects to life". As of May 2019, Kickstarter has received more than $4 billion in pledges from 16.3 million backers to fund 445,000 projects, such as films, music, stage shows, comics, journalism, video games, technology, publishing, and food-related projects.
+
+The data is collected by [Mickaël Mouillé](https://www.kaggle.com/kemical) and is last uodated in 2018. Columns are self explanatory. Note that `usd_pledged` is the column `pledged` in US dollars (conversion done by kickstarter) and `usd_pledge_real` is the `pledged` column in real US dollars of the pledged column. Finally, `usd_goal_real` is the column `goal` in real US dollars. You should use the real columns.
+
+
+So what makes a project successful? Undoubtedly, there are many factors, but perhaps we could set up a prediction problem here, similar to the one from the bonus part of the last assignment where we used GDP to predict personnel contributions. 
+
+We have columns representing the the number of backers, project length, the main category, and the real project goal in USD for each project. 
+
+Let's explore the relationship between those predictors and the dependent variable of interest — the success of a project. 
+
+Instead of running a simple linear regression and calling it a day, let's use cross-validation to make our prediction a little more sophisticated. 
+
+Our general plan is the following: 
+
+1. Build the model on a training data set 
+2. Apply the model on a new test data set to make predictions based on the inferred model parameters. 
+3. Compute and track the prediction errors to check performance using the mean squared difference between the observed and the predicted outcome values in the test set. 
+
+Let's get to it, step, by step. Make sure you have loaded the necessary packages for this project. 
+
+#### STEP 1: Import & Clean the Data
+
+Import the dataset from this link: https://tinyurl.com/KaggleDataCS112 
+
+Remove any rows that include missing values. 
+
+```{r}
+#importing dataset and removing any NA values
+kick_data <- read.csv("https://tinyurl.com/KaggleDataCS112")
+kick_data <- na.omit(kick_data)
+```
+
+#### STEP 2: Codify outcome variable
+
+Create a new variable that is either successful or NOT successful and call it `success` and save it in your dataframe. It should take values of 1 (successful) or 0 (unsuccessful).
+
+```{r}
+# added a new column called 'success' that is 1 when the 'state' column is 'successful' and 0 when otherwise
+kick_data <- cbind(kick_data, success = with(kick_data, ifelse(state=="successful", 1, 0)))
+```
+
+#### STEP 3: Getting the project length variable  
+
+Projects on Kickstarter can last anywhere from 1 - 60 days. Kickstarter claims that projects lasting any longer are rarely successful and campaigns with shorter durations have higher success rates, and create a helpful sense of urgency around your project. Using the package `lubridate` or any other package in R you come across by Googling, create a new column that shows the length of the project by taking the difference between the variable `deadline` and the variable `launched`. Call the new column `length` and save it in your dataframe.
+
+Remove any project length that is higher than 60. 
+
+```{r}
+# adding another column with cbind() that substracts deadline with launched date to find length of projects
+kick_data <- cbind(kick_data, length = as.Date(kick_data$deadline) - as.Date(kick_data$launched))
+# only include projects that are 60 or less days
+kick_data <- kick_data[kick_data$length <= 60, ]
+```
+
+#### STEP 4: Splitting the data into a training and a testing set
+
+While there are several variations of the k-fold cross-validation method, let’s stick with the simplest one where we just split randomly the dataset into two (k = 2) and split our available data from the link above into a training and a testing (aka validation) set. 
+
+Randomly select 80% of the data to be put in a training set and leave the rest for a test set. 
+
+```{r}
+# first line randomly samples 80% of the total row number of kick_data. This is then used to split data into training and testing sets.
+split <- sample(1:nrow(kick_data), size=0.8*nrow(kick_data))
+train_kick <- kick_data[split, ] 
+test_kick <- kick_data[-split, ]
+```
+
+
+#### STEP 5: Fitting a model 
+
+Use a logistic regression to find what factors determine the chances a project is successful. Use the variable indicating whether a project is successful or not as the dependent variables (Y) and number of backers, project length, main category of the project, and the real project goal as independent variables. Make sure to use the main category as factor.
+
+```{r}
+# logistic regression
+glm_kick <- glm(success~backers+length+as.factor(main_category)+usd_goal_real, data=train_kick, family=binomial)
+```
+
+
+#### STEP 6: Predictions
+
+Use the model you’ve inferred from the previous step to predict the success outcomes in the test set.
+
+```{r}
+# predicting using test data set and the general regression model trained by the train data set
+predict_success <- predict(glm_kick, type="response", test_kick)
+```
+
+#### STEP 7: How well did it do? 
+
+Report the misclassification rate of the predictions for the training and the test sets. 
+
+```{r}
+# used Ingrid Habrekke's help
+# first we use the training dataset. We predict the success and change it to 0 or 1 depending on if it's greater than 0.5.
+# then, we classify if the prediction was correct and we calculate the ones that were not correctly classified.
+
+predict_success_train <- predict(glm_kick, type="response", newdata=train_kick)
+predict_success_train_simple <- ifelse(predict_success_train <0.5, 0, 1)
+
+correct_class <- table(predict_success_train_simple, train_kick$success)
+incorrect_class <- (correct_class[1,2]+correct_class[2,1])/sum(correct_class)
+
+incorrect_class
+
+# same process for test data
+predict_success_test <- predict(glm_kick, type="response", newdata=test_kick)
+predict_success_test_simple <- ifelse(predict_success_test <0.5, 0, 1)
+
+correct_class2 <- table(predict_success_test_simple, test_kick$success)
+incorrect_class2 <- (correct_class[1,2]+correct_class2[2,1])/sum(correct_class2)
+
+incorrect_class2
+
+```
+
+#### Step 8: LOOCV method
+
+Apply the leave-one-out cross validation (LOOCV) method to the training set. What is the RMSE of the training and test sets. How similar are the RMSEs?
+
+```{r}
+#Since the dataset is large and the LOOCV takes a lot of time, we cut down the dataset to 5% of its original size
+subset.data <- kick_data[sample(1:nrow(kick_data), 0.05*nrow(kick_data)),]
+
+return_prob <- function(logit) {
+  return(exp(logit)/(1+exp(logit)))
+}
+
+predicted <- c()
+actual <- c()
+
+suppressWarnings({
+  for (x in 1:nrow(subset.data)) {
+    test <- subset.data[x,]
+    train <- subset.data[-x,]
+
+    temp_glm <- glm(success~backers+length+as.factor(main_category)+usd_goal_real, data=train, family="binomial")
+
+    temp_pred <- predict(temp_glm, newdata=test, type="response")
+    predicted <- c(predicted, return_prob(temp_pred))
+    actual <- c(actual, test$success)
+  }
+})
+
+predicted_binary <- ifelse(predicted < 0.5, 0, 1)
+table <- table(predicted_binary, actual)
+test_accuracy <- sum(diag(table))/sum(table)
+print (test_accuracy)
+misclass_rate <- round(((1 - test_accuracy) *100), 2)
+
+```
+
+
+#### Step 9: Explanations
+
+Compare the RMSE from the simple method to the LOOCV method?
+
+How do data scientists really use cross-validation? How is the approach in this project differ from real-world cases? Give an example to make your point!
+
+The RMSE value is smaller using the LOOCV method. There is less bias when using the LOOCV method as there are so many different datasets we use to train the model. This ensures that the model does a good job of modeling the observed, original data. Data scientists usually use this approach when they want a very unbiased model and when the original dataset is small. Since we're using only one observation as the testing data and the rest as the training data, the model will be trained using many different combinations of the same data. This allows us to train using a lot of 'different' datasets and so the bias can be reduced. But, there is a trad-eoff where the variance increases. This basically overfits the model and it will not perform so well with different datasets. Also, it can be very computationally expensive as we're going through n-1 training data sets to train the model. That is why I only used 5% of the kickstarter data to do the LOOCV and even that took a while. A different approach that real-world cases might use is k-fold cross-validation where instead of using n-1 training datasets, we divide the original data into k groups and use one as the testing dataset and the rest as the training. For example, if we divide a dataset that has a billion observations, the LOOCV method will take 1,000,000,000 - 1 observations as the training set and use the remaining 1 as the testing set. Needless to say, this is extremely computationally expensive. With k-fold cross validation, if we set k as 10, we divide the dataset into 10 groups and use one as the testing set and the other nine as the training set. This dramatically reduced required computational power. Therefore, we can see that k-fold is much less computationally expensive and it has less variance. This means that although it will lose bias, it will be more applicable to new datasets. This trade-off should be kept in mind when doing cross-validations. 
+
+
+## Extra Credit: Least Absolute Deviation Estimator
+
+#### STEP 1
+
+Figure out how to use rgenoud to run a regression that maximizes the least absolute deviation instead of the traditional **sum of the squared residuals**. Show that this works by running that regression on the `lalonde` data set with outcome being `re78` and independent variables being `age`, `education`, `hisp`, `re74`, `re75`, and `treat`. 
+
+```{r}
+# YOUR CODE HERE
+
+```
+
+
+#### STEP 2
+
+How different is this coef on treat from the coef on treat that you get from the corresponding traditional least squares regression?
+
+
+
+
+
+#### STEP 3
+
+Now figure out how to do the same by using rgenoud to run the logistic regression (modeling treatment status as a function of `age`, `education`, `hisp`, `re74` and `re75`).
+
+```{r}
+# YOUR CODE HERE
+
+```
+
+
+## END OF Assignment!!!
+
+## Final Steps
+
+### Add Markdown Text to .Rmd
+
+Before finalizing your project you'll want be sure there are **comments in your code chunks** and **text outside of your code chunks** to explain what you're doing in each code chunk. These explanations are incredibly helpful for someone who doesn't code or someone unfamiliar to your project.
+You have two options for submission:
+
+1. You can complete this .rmd file, knit it to pdf and submit both the .rmd file and the .pdf file on Forum as one .zip file.
+2. You can submit your assignment as a separate pdf using your favorite text editor and submit the pdf file along with a lint to your github code. Note that links to Google Docs are not accepted.
+
+
+### Knitting your R Markdown Document
+
+Last but not least, you'll want to **Knit your .Rmd document into an HTML document**. If you get an error, take a look at what the error says and edit your .Rmd document. Then, try to Knit again! Troubleshooting these error messages will teach you a lot about coding in R. If you get any error that doesn't make sense to you, post it on Perusall.
+
+### A Few Final Checks
+
+If you are submitting an .rmd file, a complete project should have:
+
+- Completed code chunks throughout the .Rmd document (your RMarkdown document should Knit without any error)
+- Comments in your code chunks
+- Answered all questions throughout this exercise.
+
+If you are NOT submitting an .rmd file, a complete project should have:
+
+- A pdf that includes all the answers and their questions.
+- A link to Github (gist or repository) that contais all the code used to answer the questions. Each part of you code should say which question it's referring to.
